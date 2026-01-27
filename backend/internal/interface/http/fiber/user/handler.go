@@ -2,7 +2,9 @@ package user
 
 import (
 	"cafe-pos/internal/app/user"
+	"cafe-pos/internal/domain/errors"
 	"cafe-pos/internal/domain/repository"
+	fibererrors "cafe-pos/internal/interface/http/fiber/errors"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -25,10 +27,8 @@ func NewHandler(usecase user.UserUsecase) *Handler {
 func (h *Handler) CreateUser(c *fiber.Ctx) error {
 	var req CreateUserRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error":   "Invalid request body",
-			"message": err.Error(),
-		})
+		return fibererrors.HandleError(c, errors.NewBadRequest("Invalid request body").
+			WithMessage("ข้อมูลที่ส่งมาไม่ถูกต้อง"))
 	}
 
 	// Validate request
@@ -41,19 +41,14 @@ func (h *Handler) CreateUser(c *fiber.Ctx) error {
 		} else {
 			validationErrors = append(validationErrors, err.Error())
 		}
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error":   "Validation failed",
-			"message": validationErrors,
-		})
+		return fibererrors.HandleError(c, errors.NewValidationErrors(validationErrors))
 	}
 
 	// Convert request to domain model
 	roleID, err := uuid.Parse(req.RoleID)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error":   "Invalid role ID",
-			"message": err.Error(),
-		})
+		return fibererrors.HandleError(c, errors.NewBadRequest("Invalid role ID format").
+			WithMessage("รหัสบทบาทไม่ถูกต้อง"))
 	}
 
 	domainUser := &repository.User{
@@ -72,10 +67,7 @@ func (h *Handler) CreateUser(c *fiber.Ctx) error {
 
 	// Call usecase
 	if err := h.usecase.CreateUser(c.Context(), domainUser); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error":   "Failed to create user",
-			"message": err.Error(),
-		})
+		return fibererrors.HandleError(c, err)
 	}
 
 	// Return response
@@ -86,25 +78,19 @@ func (h *Handler) CreateUser(c *fiber.Ctx) error {
 func (h *Handler) GetUserByID(c *fiber.Ctx) error {
 	idParam := c.Params("id")
 	if idParam == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "User ID is required",
-		})
+		return fibererrors.HandleError(c, errors.NewBadRequest("User ID is required").
+			WithMessage("กรุณาระบุรหัสผู้ใช้"))
 	}
 
 	id, err := uuid.Parse(idParam)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error":   "Invalid user ID format",
-			"message": err.Error(),
-		})
+		return fibererrors.HandleError(c, errors.NewBadRequest("Invalid user ID format").
+			WithMessage("รูปแบบรหัสผู้ใช้ไม่ถูกต้อง"))
 	}
 
 	domainUser, err := h.usecase.GetUserByID(c.Context(), id)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error":   "User not found",
-			"message": err.Error(),
-		})
+		return fibererrors.HandleError(c, err)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(domainUser)
