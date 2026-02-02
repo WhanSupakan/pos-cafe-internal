@@ -135,3 +135,10 @@ temp/
 # Logs
 logs
 *.log
+
+# Debug files
+_debug/
+**/__debug_bin*
+*.debug
+.vscode/__debug_bin*
+.cursor/__debug_bin*
