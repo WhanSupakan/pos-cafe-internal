@@ -4,23 +4,20 @@ import (
 	"cafe-pos/config"
 	"cafe-pos/internal/app/user"
 	"cafe-pos/internal/infrastructure/database/postgres"
+	"cafe-pos/internal/infrastructure/logger/std"
 	entrepo "cafe-pos/internal/infrastructure/persistence/ent"
 	fiberapp "cafe-pos/internal/interface/http/fiber"
+	fibererrors "cafe-pos/internal/interface/http/fiber/errors"
 	userhandler "cafe-pos/internal/interface/http/fiber/user"
 	"log"
 
 	"github.com/WhanSupakan/helpmez"
 )
 
-// Composition root
-// This file will wire all dependencies together
-// No business logic should be here
-
 func main() {
-	// TODO: Initialize configuration
 	cfg := config.LoadConfig()
 	helpmez.Print(cfg)
-	// TODO: Initialize infrastructure (database, cache, messaging)
+
 	db, err := postgres.NewEntClient(cfg.DatabaseDSN)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
@@ -32,16 +29,13 @@ func main() {
 
 	defer db.Close()
 
-	// Initialize repositories
+	logger := std.NewStdLogger()
+	fibererrors.SetDefaultHandler(logger)
+
 	userRepo := entrepo.NewUserRepository(db)
-
-	// Initialize usecases
 	userUsecase := user.NewUserUsecase(userRepo)
-
-	// Initialize handlers
 	userHandler := userhandler.NewHandler(userUsecase)
 
-	// Initialize HTTP delivery layer
 	server := fiberapp.NewServer(cfg)
 	fiberapp.NewRouter(server, userHandler)
 

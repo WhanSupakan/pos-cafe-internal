@@ -3,6 +3,7 @@ package entrepo
 import (
 	"cafe-pos/internal/db/models"
 	"cafe-pos/internal/db/models/user"
+	"cafe-pos/internal/domain/errors"
 	"cafe-pos/internal/domain/repository"
 	"context"
 
@@ -33,13 +34,18 @@ func (r *userRepository) CreateUser(ctx context.Context, domainUser *repository.
 		SetRoleID(modelUser.RoleID).
 		SetStatus(modelUser.Status).
 		Save(ctx)
-	return err
+	
+	if err != nil {
+		return convertToDomainError(err, "User")
+	}
+	
+	return nil
 }
 
 func (r *userRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*repository.User, error) {
 	modelUser, err := r.client.User.Query().Where(user.ID(id)).Only(ctx)
 	if err != nil {
-		return nil, err
+		return nil, convertToDomainError(err, "User")
 	}
 	return toDomainUser(modelUser), nil
 }
@@ -49,7 +55,11 @@ func (r *userRepository) GetUser(ctx context.Context, filter *repository.UserFil
 	query := applyUserFilter(r.client.User.Query(), modelFilter)
 	modelUser, err := query.Only(ctx)
 	if err != nil {
-		return nil, err
+		// Return nil for not found, don't convert to error (used for checking existence)
+		if models.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, convertToDomainError(err, "User")
 	}
 	return toDomainUser(modelUser), nil
 }
@@ -248,4 +258,28 @@ func applyUserUpdates(updater *models.UserUpdateOne, u *models.User, fields []st
 	}
 
 	return updater
+}
+
+// convertToDomainError converts infrastructure errors to domain errors
+func convertToDomainError(err error, resource string) error {
+	if err == nil {
+		return nil
+	}
+
+	// Handle ent errors
+	if models.IsNotFound(err) {
+		return errors.NewNotFound(resource, "").WithError(err)
+	}
+
+	if models.IsConstraintError(err) {
+		// Try to extract field information from constraint error
+		return errors.NewConflict(resource, "", "").WithError(err)
+	}
+
+	if models.IsValidationError(err) {
+		return errors.NewValidationFailed(err.Error()).WithError(err)
+	}
+
+	// Default to internal error for unknown errors
+	return errors.NewInternal("database operation failed").WithError(err)
 }
